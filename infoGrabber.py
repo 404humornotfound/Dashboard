@@ -122,3 +122,23 @@ def get_len_of_registrations_window(year): # manually insert dates b/c race may 
             return (datetime(2024, 10, 12) - datetime(2024, 4, 5)).days
         case _:
             raise Exception("year has no data")
+
+
+def get_start_end_date_by_year(year: int):
+    match year:
+        case 2022:
+            return [datetime(2022, 4, 24), datetime(2022, 10, 8)]
+        case 2023:
+            return [datetime(2023, 4, 28), datetime(2023, 10, 14)]
+        case 2024:
+            return [datetime(2024, 4, 5), datetime(2024, 10, 12)]
+        case _:
+            raise Exception("year has no data")
+
+
+def get_days_from_race(current_year: int): # returns numerical value of days from race
+    today = date.today()
+    end_day = get_start_end_date_by_year(current_year)[1].date()
+
+    days = (end_day - today).days
+    return days

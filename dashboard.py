@@ -1,7 +1,7 @@
 import pandas as pd
 from datetime import datetime, date
 from gsheetInterface import get_all_gids, get_dataframe_by_year
-from infoGrabber import get_just_date, group_x_registrations_vs_date, get_frequency_of_registrations_arr, get_arr_of_all_dates, get_len_of_registrations_window
+from infoGrabber import get_just_date, group_x_registrations_vs_date, get_frequency_of_registrations_arr, get_arr_of_all_dates, get_len_of_registrations_window, get_days_from_race
 import plotly.express as px
 import streamlit as st
 
@@ -32,8 +32,7 @@ days = []
 for i in range(totalDays+1):
     days.append(totalDays-i)
 
-print(f"for year 6 days: {len(get_arr_of_all_dates(df))}")
-print(f"for year 7 days: {len(get_arr_of_all_dates(dataframe))}")
+
 data1 = {
     # "Days Until Race": days,
     "Days Until Race": get_arr_of_all_dates(df),
@@ -60,12 +59,10 @@ for i in gidsList:
     length = int(get_len_of_registrations_window(num))
     if minimum >= length:
         minimum = length
-        print(f"min = {length}")
     if max <= length:
         max = length
-        print(f"max = {max}")
 
-d = st.text_input(f"Print number of days until race you would like to see, must be < {minimum+2}")
+d = st.text_input(f"Today is {get_days_from_race(2024)} days from race day. Print number of days until race you would like to see, must be < {minimum+2}")
 
 if d.isdigit():
     num_days = int(d)
@@ -93,3 +90,4 @@ if switch and d.isdigit() and num_days < minimum+2:
     st.plotly_chart(fig)
 else:
     st.write(f"year is not less than minimum number of days: {minimum+2}")
+
