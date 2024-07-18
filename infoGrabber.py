@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta,date
 from operator import *
 import streamlit as st
-
+import json
 
 def to_frequency(startDate, endDate, df):
     frequency = []
@@ -136,9 +136,29 @@ def get_start_end_date_by_year(year: int):
             raise Exception("year has no data")
 
 
+def get_arr_all_dates():
+    return [
+        [datetime(2022, 4, 24), datetime(2022, 10, 8)],
+
+    [datetime(2023, 4, 28), datetime(2023, 10, 14)],
+
+     [datetime(2024, 4, 5), datetime(2024, 10, 12)]
+    ]
+
+
 def get_days_from_race(current_year: int): # returns numerical value of days from race
     today = date.today()
     end_day = get_start_end_date_by_year(current_year)[1].date()
 
     days = (end_day - today).days
     return days
+
+
+def smol_days_to_actual_years(smol_day):
+    f = open('info.json')
+    data = json.load(f)
+    for index, i in data['name']:
+        if int(i) == int(smol_day):
+            to_return = data['name'][index]
+            f.close()
+            return to_return

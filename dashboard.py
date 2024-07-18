@@ -1,9 +1,12 @@
 import pandas as pd
 from datetime import datetime, date
 from gsheetInterface import get_all_gids, get_dataframe_by_year
-from infoGrabber import get_just_date, group_x_registrations_vs_date, get_frequency_of_registrations_arr, get_arr_of_all_dates, get_len_of_registrations_window, get_days_from_race
+from infoGrabber import get_just_date, group_x_registrations_vs_date, get_frequency_of_registrations_arr, get_arr_of_all_dates, get_len_of_registrations_window, get_days_from_race, get_arr_all_dates, get_start_end_date_by_year, smol_days_to_actual_years
 import plotly.express as px
 import streamlit as st
+from operator import *
+
+
 
 gidsList = get_all_gids()
 
@@ -88,6 +91,21 @@ if switch and d.isdigit() and num_days < minimum+2:
     fig = px.line(real_df, x='Days Until Race', y=list_of_years)
     fig.update_xaxes(type='category')
     st.plotly_chart(fig)
+
+    cumulative_data = {
+        'years': list_of_years,
+    }
+    list_of_all_years_dates = get_arr_all_dates()
+
+    for i in range(len(list_of_all_years_dates)):
+        today = date.today()
+        end_date = get_start_end_date_by_year(smol_days_to_actual_years(gidsList[i][1]))
+        date_range = df.loc[today:end_date]
+        unique_events = date_range['Sub-event'].unique()
+        for j in unique_events:
+            count = countOf(date_range, j)
+            cumulative_data.update("a": count)
+
 else:
     st.write(f"year is not less than minimum number of days: {minimum+2}")
 
