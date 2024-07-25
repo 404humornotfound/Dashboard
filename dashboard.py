@@ -97,14 +97,14 @@ if switch and d.isdigit() and num_days < minimum+2:
     }
     list_of_all_years_dates = get_arr_all_dates()
 
-    for i in range(len(list_of_all_years_dates)):
-        today = date.today()
-        end_date = get_start_end_date_by_year(smol_days_to_actual_years(gidsList[i][1]))
-        date_range = df.loc[today:end_date]
-        unique_events = date_range['Sub-event'].unique()
-        for j in unique_events:
-            count = countOf(date_range, j)
-            cumulative_data.update("a": count)
+    # for i in range(len(list_of_all_years_dates)):
+    #     today = date.today()
+    #     end_date = get_start_end_date_by_year(smol_days_to_actual_years(gidsList[i][1]))
+    #     date_range = df.loc[today:end_date]
+    #     unique_events = date_range['Sub-event'].unique()
+    #     for j in unique_events:
+    #         count = countOf(date_range, j)
+    #         cumulative_data.update("a": count)
 
 else:
     st.write(f"year is not less than minimum number of days: {minimum+2}")

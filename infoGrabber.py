@@ -146,7 +146,7 @@ def get_arr_all_dates():
     ]
 
 
-def get_days_from_race(current_year: int): # returns numerical value of days from race
+def get_days_from_race(current_year: int):  # returns numerical value of days from race
     today = date.today()
     end_day = get_start_end_date_by_year(current_year)[1].date()
 
