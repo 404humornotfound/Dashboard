@@ -15,6 +15,13 @@ for i in range(len(info_df.index)):
 
 today = datetime.today().date()
 
+for i in reversed(range(len(races))):
+    days_from_race = (races[i].end_date-today).days
+    if days_from_race >= 0:
+        st.write(f"today is {days_from_race} days from race")
+        break
+
+
 num_days = st.text_input("input days until race here")
 
 
@@ -24,20 +31,12 @@ if num_days.isnumeric():
     for i in reversed(range(len(races))):
         if i % 2 == 0:
             with col1:
-                days_from_race = (races[i].end_date-today).days
                 st.write(races[i].race_name)
-                if days_from_race >= 0:
-                    st.write(f"today is {days_from_race} days from race")
                 st.dataframe(races[i].get_accumulated_unique_by_day(int(num_days)).set_index('events'))
-                st.write(f"total registrants:{len(races[i].dataframe.index)}")
         else:
             with col2:
-                days_from_race = (races[i].end_date-today).days
                 st.write(races[i].race_name)
-                if days_from_race >= 0:
-                    st.write(f"today is {days_from_race} days from race")
                 st.dataframe(races[i].get_accumulated_unique_by_day(int(num_days)).set_index('events'))
-                st.write(f"Total Registrants: {len(races[i].dataframe.index)}")
 
 
 
