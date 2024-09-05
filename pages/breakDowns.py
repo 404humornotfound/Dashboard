@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit as st
 from datetime import *
 from class_init import *
-
+import plotly.express as px
 
 # initialize info class
 
@@ -28,12 +28,9 @@ for i in range(len(info_df.index)):
     races.append(Race(info.get_dataframe_by_gid(info_df['sheet gid'].iloc[i]), start_date, end_date, info_df['Name of race (unique)'].iloc[i]))
     
 
+for i in range(len(info_df.index)):
+    if checkboxes[i]:
+        races[i].graph_it()
+        
 
-    
 
-
-# dataframe1 = pd.DataFrame(data1)
-# fig = px.line(dataframe1, x='Days Until Race', y=['Registrations for 5K', 'Registrations for 10K', 'Registrations all'],
-#               color_discrete_sequence=['gray', 'red', 'blue'])
-# fig.update_xaxes(type='category')
-# st.plotly_chart(fig)

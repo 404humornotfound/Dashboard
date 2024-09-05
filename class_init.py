@@ -2,7 +2,8 @@ import pandas as pd
 from datetime import *
 from operator import *
 from jsonHandling import *
-
+import plotly.express as px
+import streamlit as st
 
 class Information:
     def __init__(self) -> None:
@@ -37,8 +38,9 @@ class Race:
         self.dataframe['Date Registered'] = pd.to_datetime(self.dataframe['Date Registered'], format='%Y-%m-%d %H:%M:%S')
         self.dataframe['just_date'] = self.dataframe['Date Registered'].dt.date
         self.dataframe = self.dataframe.sort_values(by=['just_date'])  # to guarentee info is always in chronological sign up order
-        self.dataframe['just_date'] = pd.to_datetime(self.dataframe['just_date'])
+
         self.dataframe = self.dataframe.set_index('just_date')
+
 
 
 
@@ -90,3 +92,85 @@ class Race:
         return frequency
     def get_dataframe(self) -> pd.DataFrame:
         return self.dataframe
+    
+#graphing dedicated fxns below:
+
+
+
+    def get_arr_days(self):
+        days = []
+
+        for i in range((self.end_date - self.start_date).days + 1):
+            days.append(self.start_date + timedelta(days=i))
+
+        return days
+    
+
+
+    def graph_it(self):
+        days = self.get_arr_days()
+        data = {
+        "Days Until Race": days,
+        }
+
+        # st.write(self.dataframe.loc[days[10].strftime('%Y-%m-%d')])
+        # st.dataframe(self.dataframe.loc[days[19]])
+
+
+        unique_events = sorted(self.dataframe['Sub-event'].unique())
+        list_of_frequencies = [[]]
+
+        overall_frequency = []
+
+        for i in range(len(unique_events)-1):
+            list_of_frequencies.append([])
+
+
+        # .set_index('just_date')
+
+        for i in days:
+
+            try:
+                temp = self.dataframe.loc[i]
+            except:
+                for j in range(len(unique_events)):
+                    list_of_frequencies[j].append(0)
+                overall_frequency.append(0)
+            
+            else:
+
+                overall_frequency.append(len(temp.index))
+                for j in range(len(unique_events)):
+            
+                    that_days_frequency = countOf(temp['Sub-event'], unique_events[j])
+                    list_of_frequencies[j].append(that_days_frequency)
+
+
+            
+
+        data.update({'Registrations all':overall_frequency})
+        for i in range(len(unique_events)):
+            data.update({unique_events[i]:list_of_frequencies[i]})
+
+        # print(data)
+
+
+
+        dataframe1 = pd.DataFrame(data)
+
+        unique_events.append('Registrations all')
+
+        
+        fig = px.line(dataframe1, x='Days Until Race', y=unique_events)
+        fig.update_xaxes(type='category')
+        st.plotly_chart(fig)
+
+
+
+# data1 = {
+#     # "Days Until Race": days,
+#     "Days Until Race": get_arr_of_all_dates(df),
+#     "Registrations for 5K": fiveK,
+#     "Registrations for 10K": tenK,
+#     "Registrations all": allRegistrations
+# }
