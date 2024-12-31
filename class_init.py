@@ -4,13 +4,15 @@ from operator import *
 from jsonHandling import *
 import plotly.express as px
 import streamlit as st
+import os
+from dotenv import load_dotenv, dotenv_values
+load_dotenv() 
 
 class Information:
     def __init__(self) -> None:
-        self.stuff = get_secure_info()
-        self.info_gid = self.stuff[0]
-        self.sheet_id = self.stuff[1]
-        self.sheet_name = self.stuff[2]
+        self.info_gid = os.getenv("info_gid")
+        self.sheet_id = os.getenv("sheet_id")
+        self.sheet_name = os.getenv("sheet_name")
         # print(f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/gviz/tq?tqx=out:csv&sheet={self.sheet_name}&gid={self.info_gid}")
         self.url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/gviz/tq?tqx=out:csv&sheet={self.sheet_name}&gid={self.info_gid}"
 
