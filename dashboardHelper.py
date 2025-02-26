@@ -4,16 +4,20 @@ from datetime import *
 from class_init import *
 import plotly.express as px
 
+
+
 def graph_it(name:str, races) -> None:
 
+
+    #to find max duration to make sure there is enough space for all graph x axis
     max_registration_durration = -1
-    
     for i in races:
         if max_registration_durration < (i.end_date - i.start_date).days+1:
             max_registration_durration = (i.end_date - i.start_date).days+1
 
-    days = []
 
+    # init days arr 
+    days = []
     for i in range(max_registration_durration):
         days.append(max_registration_durration-i)
 

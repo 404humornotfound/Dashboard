@@ -6,6 +6,8 @@ import plotly.express as px
 import streamlit as st
 import os
 from dotenv import load_dotenv, dotenv_values
+
+
 load_dotenv() 
 
 class Information:
@@ -39,14 +41,13 @@ class Race:
             self.dataframe.at[i, 'Date Registered'] = datetime.strptime(string, '%Y-%m-%d %H:%M:%S')
         self.dataframe['Date Registered'] = pd.to_datetime(self.dataframe['Date Registered'], format='%Y-%m-%d %H:%M:%S')
         self.dataframe['just_date'] = self.dataframe['Date Registered'].dt.date
-        self.dataframe = self.dataframe.sort_values(by=['just_date'])  # to guarentee info is always in chronological sign up order
-
-        self.dataframe = self.dataframe.set_index('just_date')
+        self.dataframe = self.dataframe.set_index('Participant ID')
 
 
 
-
-
+    """
+    Returns 2d array of 0 column of unique event names, 1 column is the number of people in said event 
+    """
     def get_final_total_unique(self) -> pd.DataFrame:
         unique_events = self.dataframe['Sub-event'].unique()
         arr = []
@@ -79,23 +80,12 @@ class Race:
 
 
 
-
-
     def to_frequency(self):
         frequency = []
-        days = []
 
         for i in range((self.end_date - self.start_date).days + 1):
             day = self.start_date + timedelta(days=i)
-            try:
-                temp = self.dataframe.loc[day] 
-            except:
-                frequency.append(0)
-                days.append(0)
-            else:
-                days.append(day)
-                nums = len(temp.index)
-                frequency.append(nums)
+            frequency.append(len(self.dataframe[self.dataframe.just_date == day]))
         return frequency
     
     def to_frequency_unique(self, unique:str):
