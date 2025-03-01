@@ -44,9 +44,6 @@ class Race:
         self.dataframe = self.dataframe.set_index('Participant ID')
         self.dataframe['rly_just_date'] = pd.to_datetime(self.dataframe['just_date']).dt.tz_localize(None)
         self.dataframe['event'] = self.dataframe['Sub-event']
-        print(f"dtype: {self.dataframe['rly_just_date'].dtype}")
-
-
 
 
     """
@@ -86,21 +83,14 @@ class Race:
             frequency.append(len(self.dataframe[self.dataframe.just_date == day]))
         return frequency
     
-    def to_frequency_unique(self, unique:str):
+
+
+    def to_frequency_unique(self, event:str):
         frequency = []
-        days = []
 
         for i in range((self.end_date - self.start_date).days+1):
             day = self.start_date + timedelta(days=i)
-            try:
-                temp = self.dataframe.loc[day] 
-            except:
-                frequency.append(0)
-                days.append(0)
-            else:
-                days.append(day)
-                nums = countOf(temp, unique)
-                frequency.append(nums)
+            frequency.append(len(self.dataframe[(self.dataframe.event == event) & (self.dataframe.just_date == day)]))
         return frequency
 
     

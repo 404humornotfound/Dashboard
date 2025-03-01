@@ -18,35 +18,22 @@ for i in range(len(info_df.index)):
     races.append(Race(info.get_dataframe_by_gid(info_df['sheet gid'].iloc[i]), start_date, end_date, info_df['Name of race'].iloc[i]))
     
 
-# print(races[0].to_frequency())
 
-
-checkboxes = []
-verified_races = []
-
-
+st.write("The purpose of this is to graphically see registrations, overall and by unique event year by year")
 unique = sorted(races[0].dataframe['Sub-event'].unique())
-# unique = races[0].dataframe['Sub-event'].unique()
-
-
-# initializes selector
-# for i in unique:
-#     checkboxes.append(st.checkbox(i))
-# checkboxes.append(st.checkbox("all registrations"))
 unique.append("all registrations")
 
-
-quiz = st.radio(
+selector = st.radio(
     "select a type",
     unique
 )
 
 
 
-if quiz == "all registrations":
+if selector == "all registrations":
     graph_it("all registrations", races)
 else:
-    graph_it(quiz, races)
+    graph_it(selector, races)
 
 
 
