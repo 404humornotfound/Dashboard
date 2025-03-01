@@ -19,8 +19,10 @@ for i in reversed(range(len(races))):
     days_from_race = (races[i].end_date-today).days
     if days_from_race >= 0:
         st.write(f"today is {days_from_race} days from race")
-    else:
+        break
+    elif i == len(races)-1:
         st.write("no new race has been uploaded yet to calculate days from race day")
+        break
 
 
 num_days = st.text_input("input days until race here")

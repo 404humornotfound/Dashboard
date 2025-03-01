@@ -3,11 +3,9 @@ import pandas as pd
 from datetime import datetime, date
 from class_init import *
 
-
+# needs one giant fix
 
 current_year_number = date.today().year
-
-
 
 uploaded = False
 uploaded_file = st.file_uploader("Upload csv here",type=".csv", accept_multiple_files=False)
