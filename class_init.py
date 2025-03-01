@@ -42,6 +42,9 @@ class Race:
         self.dataframe['Date Registered'] = pd.to_datetime(self.dataframe['Date Registered'], format='%Y-%m-%d %H:%M:%S')
         self.dataframe['just_date'] = self.dataframe['Date Registered'].dt.date
         self.dataframe = self.dataframe.set_index('Participant ID')
+        self.dataframe['rly_just_date'] = pd.to_datetime(self.dataframe['just_date'])
+        print(f"dtype: {self.dataframe['rly_just_date'].dtype}")
+
 
 
 
@@ -60,8 +63,11 @@ class Race:
     
 
     def get_accumulated_unique_by_day(self, days_until_race:int):
+        df = self.dataframe
         datee = self.end_date-timedelta(days=days_until_race)
-        dates_of_interest_df = self.dataframe.loc[self.start_date:datee]
+        # dates_of_interest_df = self.dataframe['rly_just_date'].loc[self.start_date:datee]
+        # the problem is figuring out how to get the date range
+        dates_of_interest_df = self.dataframe[(self.start_date >= df['just_date']) & (self.end_date <= df['just_date'])]
         unique_events = sorted(self.dataframe['Sub-event'].unique())
         arr = []
         nums = []
