@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import *
 from class_init import *
 
-
+# helpful init
 info = Information()
 info_df = info.dataframe
 
@@ -12,21 +12,21 @@ for i in range(len(info_df.index)):
     end_date = datetime.strptime(info_df['Registration end date'].iloc[i], "%Y-%m-%d").date()
     races.append(Race(info.get_dataframe_by_gid(info_df['sheet gid'].iloc[i]), start_date, end_date, info_df['Name of race'].iloc[i]))
 
-
 today = datetime.today().date()
 
+# just calculates day from race
 for i in reversed(range(len(races))):
     days_from_race = (races[i].end_date-today).days
     if days_from_race >= 0:
         st.write(f"today is {days_from_race} days from race")
-        break
+    else:
+        st.write("no new race has been uploaded yet to calculate days from race day")
 
 
 num_days = st.text_input("input days until race here")
 
 
-#to improve next
-if num_days.isnumeric():
+if num_days.isnumeric() and int(num_days) < 200 and int(num_days) >= 0:
     col1, col2 = st.columns(2)
     for i in reversed(range(len(races))):
         if i % 2 == 0:
@@ -37,18 +37,7 @@ if num_days.isnumeric():
             with col2:
                 st.write(races[i].race_name)
                 st.dataframe(races[i].get_accumulated_unique_by_day(int(num_days)).set_index('events'))
-
-
-
-
-# if num_days.isnumeric():
-#     df = races[0].get_accumulated_unique_by_day(int(num_days)).set_index('events')
-
-#     for i in range(len(races)-1):  
-#             # df.merge(races[i+1].get_accumulated_unique_by_day(int(num_days)), rsuffix=f'_{races[i+1].race_name}')
-#         df = df.join(races[i+1].get_accumulated_unique_by_day(int(num_days)), rsuffix=f'_{races[i+1].race_name}')
-
-
-# st.dataframe(df)
+else:
+    st.write("invalid input for number of days until race, 199 to 0 valid inputs") 
 
 

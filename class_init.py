@@ -42,7 +42,8 @@ class Race:
         self.dataframe['Date Registered'] = pd.to_datetime(self.dataframe['Date Registered'], format='%Y-%m-%d %H:%M:%S')
         self.dataframe['just_date'] = self.dataframe['Date Registered'].dt.date
         self.dataframe = self.dataframe.set_index('Participant ID')
-        self.dataframe['rly_just_date'] = pd.to_datetime(self.dataframe['just_date'])
+        self.dataframe['rly_just_date'] = pd.to_datetime(self.dataframe['just_date']).dt.tz_localize(None)
+        self.dataframe['event'] = self.dataframe['Sub-event']
         print(f"dtype: {self.dataframe['rly_just_date'].dtype}")
 
 
@@ -62,27 +63,18 @@ class Race:
         return pd.DataFrame(unique_events, nums)
     
 
-    def get_accumulated_unique_by_day(self, days_until_race:int):
+    # returns dataframe of events participants by a certian day and total
+    def get_accumulated_unique_by_day(self, days_until_race:int) -> pd.DataFrame:
         df = self.dataframe
-        datee = self.end_date-timedelta(days=days_until_race)
-        # dates_of_interest_df = self.dataframe['rly_just_date'].loc[self.start_date:datee]
-        # the problem is figuring out how to get the date range
-        dates_of_interest_df = self.dataframe[(self.start_date >= df['just_date']) & (self.end_date <= df['just_date'])]
-        unique_events = sorted(self.dataframe['Sub-event'].unique())
-        arr = []
+        day = self.end_date-timedelta(days=days_until_race-1)
+        unique_events = sorted(df['event'].unique())
         nums = []
         overall_nums = []
-        for i in unique_events:
-            num = countOf(dates_of_interest_df['Sub-event'], i)
-            num1 = countOf(self.dataframe['Sub-event'], i)
-            overall_nums.append(num1)
-            nums.append(num)
-            arr.append([i, num, num1])
-        unique_events.append("z_sum")
-        nums.append(len(dates_of_interest_df.index))
-        overall_nums.append(len(self.dataframe.index))
-        df = pd.DataFrame({"events":unique_events,f"{days_until_race} days left":nums, "total":overall_nums})
-        return df
+        for event in unique_events:
+            nums.append(len(df[(df.event == event) & (df.just_date < day)]))
+            overall_nums.append(len(df[(df.event == event)]))
+        return pd.DataFrame({"events":unique_events,f"{days_until_race} days left": nums, "total":overall_nums})
+
 
 
 
