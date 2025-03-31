@@ -66,9 +66,14 @@ class Race:
         unique_events = sorted(df['event'].unique())
         nums = []
         overall_nums = []
+        total = 0
         for event in unique_events:
             nums.append(len(df[(df.event == event) & (df.just_date < day)]))
             overall_nums.append(len(df[(df.event == event)]))
+
+        unique_events.append("all")
+        nums.append(len(df))
+        overall_nums.append(len(df))
         return pd.DataFrame({"events":unique_events,f"{days_until_race} days left": nums, "total":overall_nums})
 
 
