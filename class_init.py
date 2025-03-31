@@ -72,7 +72,7 @@ class Race:
             overall_nums.append(len(df[(df.event == event)]))
 
         unique_events.append("all")
-        nums.append(len(df))
+        nums.append(len(df[(df.just_date < day)]))
         overall_nums.append(len(df))
         return pd.DataFrame({"events":unique_events,f"{days_until_race} days left": nums, "total":overall_nums})
 
