@@ -33,3 +33,6 @@ for i in range(len(info_df.index)):
 
 
 # todo add graphs breaking down age and gender
+
+# fig = 
+# st.plotly_chart(fig)
