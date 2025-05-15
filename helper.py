@@ -2,8 +2,8 @@ from google.oauth2.service_account import Credentials
 import gspread
 import pandas as pd
 import streamlit as st
-
-
+from dotenv import load_dotenv
+import os
 def setup():  # literally copied and pasted just allows for writing to spreadsheets
     scopes = [
         'https://www.googleapis.com/auth/spreadsheets',
@@ -11,12 +11,12 @@ def setup():  # literally copied and pasted just allows for writing to spreadshe
     ]
 
     credentials = Credentials.from_service_account_file(
-        'secret_new_key.json',
+        'secret_key.json',
         scopes=scopes
     )
-
+    load_dotenv()
     gc = gspread.authorize(credentials)
-    name = 'WaterDogRunData'
+    name = os.getenv(name)
     sh = gc.open(name)
 
     return sh
@@ -30,7 +30,7 @@ def get_gids():  # uses api to get gids
         print()
     return sh.worksheets()
 
-
+# what does this do?
 def strip_name_and_id_from_string(i: str):
     second_quote_location = i[13:].find('\'')+13
     second_string = i[second_quote_location:]

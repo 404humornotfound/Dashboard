@@ -4,21 +4,29 @@ from operator import *
 import plotly.express as px
 import streamlit as st
 import os
-from dotenv import load_dotenv, dotenv_values
+import requests
+from dotenv import load_dotenv
 
 
-load_dotenv() 
 
 class Information:
     def __init__(self) -> None:
+        load_dotenv()
         self.info_gid = os.getenv("info_gid")
         self.sheet_id = os.getenv("sheet_id")
         self.sheet_name = os.getenv("sheet_name")
-        # print(f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/gviz/tq?tqx=out:csv&sheet={self.sheet_name}&gid={self.info_gid}")
+        if self.info_gid == None or self.sheet_id == None or self.sheet_name == None:
+            raise Exception(".env file values not initialized, check .env is in working directory")
+
         self.url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/gviz/tq?tqx=out:csv&sheet={self.sheet_name}&gid={self.info_gid}"
+        try:
+            response = requests.get(self.url)
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Error occurred: {e} in trying to reach google's servers")
+
 
         self.dataframe = pd.DataFrame(pd.read_csv(self.url, dtype=str).fillna(""))
-        # print(self.dataframe)
+
 
     def get_dataframe_by_gid(self,given_gid: str) -> pd.DataFrame:
         url = f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/gviz/tq?tqx=out:csv&sheet={self.sheet_name}&gid={given_gid}"
