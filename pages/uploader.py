@@ -13,7 +13,7 @@ uploaded_file = st.file_uploader("Upload csv here",type=".csv", accept_multiple_
 data = None
 
 if uploaded_file is not None:
-    data = pd.read_csv(uploaded_file, dtype=str, usecols=['Date Registered', 'Last Name', 'First Name', 'Sex', 'Date of Birth', 'Email', 'City', 'State', 'Address', 'ZIP/Postal Code', 'Country', 'Sub-event', 'Age'])
+    data = pd.read_csv(uploaded_file, dtype=str, usecols=['Date Registered', 'Sex', 'City', 'State', 'ZIP/Postal Code', 'Sub-event', 'Age'])
     dataframe = pd.DataFrame(data).fillna("")
     st.write(dataframe)
     uploaded = True
