@@ -9,13 +9,12 @@ from dashboardHelper import *
 info = Information()
 info_df = info.dataframe
 
-# initialize races
 races = []
 for i in range(len(info_df.index)):
     start_date = datetime.strptime(info_df['Registration start date'].iloc[i], "%Y-%m-%d").date()
     end_date = datetime.strptime(info_df['Registration end date'].iloc[i], "%Y-%m-%d").date()
-    races.append(Race(info.get_dataframe_by_gid(info_df['sheet gid'].iloc[i]), start_date, end_date, info_df['Name of race'].iloc[i]))
-    
+    races.append(Race(pd.read_csv(f'csvs/{start_date.year}_race.csv'), start_date, end_date, info_df['Name of race'].iloc[i]))
+
 
 
 st.write("The purpose of this is to graphically see registrations, overall and by unique event year by year")

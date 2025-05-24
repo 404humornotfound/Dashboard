@@ -2,8 +2,19 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from class_init import *
+import csv
 
-# needs one giant fix
+
+info = Information()
+info_df = info.dataframe
+
+races = []
+for i in range(len(info_df.index)-1):
+    start_date = datetime.strptime(info_df['Registration start date'].iloc[i], "%Y-%m-%d").date()
+    end_date = datetime.strptime(info_df['Registration end date'].iloc[i], "%Y-%m-%d").date()
+    races.append(Race(pd.read_csv(f'csvs/{2022+i}_race.csv'), start_date, end_date, info_df['Name of race'].iloc[i]))
+
+
 
 current_year_number = date.today().year
 
@@ -41,15 +52,18 @@ if submit and uploaded:
 
 
 
-# st.write("Create a new race below:")
-# new_uploaded_file = st.file_uploader("Upload csv here",type=".csv", accept_multiple_files=False, key="adsklfj")
-# race_name = st.text_input("Input race name here ex. 2024 race")
-# start_date = st.date_input("Input start date of registrations")
-# end_date = st.date_input("Input last day of registrations")
-# create_new_race = st.button()
+st.write("Create a new race below:")
+new_uploaded_file = st.file_uploader("Upload csv here",type=".csv", accept_multiple_files=False, key="adsklfj")
+race_name = st.text_input("Input race name here ex. 2024 race -- Must be just the year")
+start_date = st.date_input("Input start date of registrations")
+end_date = st.date_input("Input last day of registrations")
+create_new_race = st.button("Create new race")
 
-# if create_new_race and new_uploaded_file is not None and race_name is not None and start_date is not None and end_date is not None:
-#     data1 = pd.read_csv(new_uploaded_file, dtype=str, usecols=['Participant ID', 'Date Registered', 'Bib Numbers', 'Last Name', 'First Name', 'Sex', 'Date of Birth', 'Email', 'City', 'State', 'Address', 'ZIP/Postal Code', 'Country', 'Sub-event', 'Age', 'Confirmation No.'])
-#     dataframe1 = pd.DataFrame(data).fillna("")
-#     write_new_race(dataframe1, race_name, start_date, end_date)
+if create_new_race and new_uploaded_file is not None and race_name is not None and start_date is not None and end_date is not None:
+    data1 = pd.read_csv(new_uploaded_file, dtype=str, usecols=['Participant ID', 'Date Registered', 'Bib Numbers', 'Last Name', 'First Name', 'Sex', 'Date of Birth', 'Email', 'City', 'State', 'Address', 'ZIP/Postal Code', 'Country', 'Sub-event', 'Age', 'Confirmation No.'])
+    dataframe1 = pd.DataFrame(data).fillna("")
+    # write_new_race(dataframe1, race_name, start_date, end_date)
+    with open(f"csvs/{race_name}_race.csv", 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows(dataframe1)
 
