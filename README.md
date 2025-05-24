@@ -1,7 +1,9 @@
 
 to set up on a local machine:
-1) clone/unzip project into a new folder
-3) in new folder run `pip install -r requirements.txt` from command line
-4) create new folder within the cloned/unzipped project called csvs
-5) upload information csv and other csvs in the google drive
-6) to run the project, type in `streamlit run dashboard.py`
+1) Navigate to terminal
+2) type `git clone https://github.com/404humornotfound/Dashboard.git`
+3) type `cd Dashboard`
+4) type `pip install -r requirements.txt`
+5) type `mkdir csvs`
+6) upload all csvs from google drive to the csvs folder
+7) to run the project, type in `streamlit run dashboard.py`
