@@ -17,7 +17,7 @@ for i in range(len(info_df.index)):
 
 year_selector = st.radio(
     "Select race you want to modify",
-    [f"name: {i.race_name}, start date: {i.start_date}, end_date: {i.end_date}" for i in races]
+    [i.race_name for i in races]
 )
 st.write(f"currently uploading for: {year_selector}")
 
