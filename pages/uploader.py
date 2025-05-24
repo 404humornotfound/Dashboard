@@ -5,23 +5,27 @@ from class_init import *
 import csv
 
 
+# helpful init
 info = Information()
 info_df = info.dataframe
 
 races = []
-for i in range(len(info_df.index)-1):
+for i in range(len(info_df.index)):
     start_date = datetime.strptime(info_df['Registration start date'].iloc[i], "%Y-%m-%d").date()
     end_date = datetime.strptime(info_df['Registration end date'].iloc[i], "%Y-%m-%d").date()
-    races.append(Race(pd.read_csv(f'csvs/{2022+i}_race.csv'), start_date, end_date, info_df['Name of race'].iloc[i]))
+    races.append(Race(pd.read_csv(f'csvs/{start_date.year}_race.csv'), start_date, end_date, info_df['Name of race'].iloc[i]))
 
-
+year_selector = st.radio(
+    "Select race you want to modify",
+    [f"name: {i.race_name}, start date: {i.start_date}, end_date: {i.end_date}" for i in races]
+)
+st.write(f"currently uploading for: {year_selector}")
 
 current_year_number = date.today().year
 
 uploaded = False
 uploaded_file = st.file_uploader("Upload csv here",type=".csv", accept_multiple_files=False)
 
-data = None
 
 if uploaded_file is not None:
     data = pd.read_csv(uploaded_file, dtype=str, usecols=['Date Registered', 'Sex', 'City', 'State', 'ZIP/Postal Code', 'Sub-event', 'Age'])
