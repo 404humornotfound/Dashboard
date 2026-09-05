@@ -26,7 +26,7 @@ import pandas as pd
 from datetime import datetime
 from openai import OpenAI
 from sqlalchemy import text
-from class_init import connect_db, _validate_table_name
+from class_init import connect_db, _validate_table_name, get_registrant_basis
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,27 @@ def get_db_schema() -> str:
     finally:
         conn.close()
 
-    return "\n\n".join(schema_parts) + info_context
+    # Per-registrant figures must divide a whole-season finance row by a whole
+    # season's field, so a year still taking sign-ups needs a projected count
+    # rather than COUNT(*). Injecting the basis as a fact lets the generated SQL
+    # use a literal, since the projection itself is not expressible in SQL.
+    basis_context = (
+        "\n\nRegistrant basis for per-registrant finance figures.\n"
+        "When dividing ANY finance-table amount by a registrant count, substitute\n"
+        "the plain number below as a literal. Do not COUNT(*) the participants\n"
+        "table for this, and never write a JOIN or WHERE that compares a count to\n"
+        "it — that matches no rows and returns an empty result.\n"
+    )
+    try:
+        for name, b in sorted(get_registrant_basis().items()):
+            basis_context += (
+                f"  {name}: use {b['basis']} "
+                f"(registrations recorded so far: {b['actual']}; {b['note']})\n"
+            )
+    except Exception:
+        basis_context = ""
+
+    return "\n\n".join(schema_parts) + info_context + basis_context
 
 
 # ---------------------------------------------------------------------------
@@ -173,44 +193,48 @@ CROSS-YEAR COVERAGE:
 DATE ARITHMETIC:
 21. "N days before the race" means CUMULATIVE registrations whose "Date" is on or before (that race's Registration end date minus N days) — INCLUSIVE. It is a running total, not a single-day window. For race_2024 (end 2024-10-12), "3 days before the race" → `WHERE race_name = 'race_2024' AND "Date"::date <= DATE '2024-10-12' - INTERVAL '3 days'`. Use '<=', not '<' and not BETWEEN.
 22. When "days before the race" is asked across all years, apply rule 21 per year using each year's own Registration end date (from the info table / the values listed in "Race metadata" below), grouping on race_name per rule 10/11.
+22b. ROUND(x, 2) does not exist in Postgres for DOUBLE PRECISION, only for NUMERIC. Every finance column is DOUBLE PRECISION, so two-argument ROUND over them errors with "function round(double precision, integer) does not exist". Cast the WHOLE rounded expression, wrapping it in parentheses first: `ROUND((a / NULLIF(b, 0))::numeric, 2)`. Casting only one operand is the common mistake and does NOT work — `ROUND(a / NULLIF(b, 0)::numeric, 2)` still leaves the division as double precision and fails. The ::numeric must sit immediately after the closing parenthesis of the full expression, directly before the comma.
 23. "Age" is stored as TEXT, not a number. For any numeric aggregation on it (AVG, SUM, MIN, MAX, numeric comparison, ORDER BY as a number) you MUST cast it: use CAST("Age" AS INTEGER), e.g. `AVG(CAST("Age" AS INTEGER))`. Never call AVG("Age") directly — it errors with "function avg(text) does not exist".
 
 TIME-SERIES / TREND QUESTIONS:
 26. When the question asks about registrations OVER TIME, about a TREND, about whether registrations rose/changed AROUND specific dates, or names one or more specific calendar dates (e.g. "5/11", "7/6"), return a DATED TIME SERIES: one row per day (or per week if the span is long) with a real date column and a count. Alias the date column as "date" so it is charted as a time axis, and ORDER BY that date ascending. Example — "was there an increase in registrations around 5/11 and 7/6": `SELECT "Date"::date AS date, COUNT(*) AS registrants FROM participants GROUP BY "Date"::date ORDER BY date`. Do NOT collapse this into before/after buckets — return the full daily series so the trend and those dates can be seen.
 
 FINANCE TABLE — read this before joining it:
-24. The 'finance' table has exactly ONE row per race (columns include race_name, "Race income", "Total income", "Total expense", "Net (all in)", and individual cost line items). finance.race_name matches participants.race_name. It covers race_2022–race_2025 only; there is NO race_2026 row. Because race_name exists in BOTH tables, ALWAYS table-qualify it everywhere it appears (SELECT, GROUP BY, ORDER BY, ON), e.g. finance.race_name — an unqualified race_name in a join errors with "column reference is ambiguous".
+24. The 'finance' table has exactly ONE row per race (columns include race_name, "Race income", "Total income", "Total expense", "Net (all in)", and individual cost line items). finance.race_name matches participants.race_name. Which races it covers varies — check the schema below rather than assuming; a row may exist for a race that has not happened yet, holding budget estimates rather than actuals. Because race_name exists in BOTH tables, ALWAYS table-qualify it everywhere it appears (SELECT, GROUP BY, ORDER BY, ON), e.g. finance.race_name — an unqualified race_name in a join errors with "column reference is ambiguous".
 25. NEVER join participants directly to finance and then SUM/AVG a finance column. finance has one row per race, so the join duplicates that row once per participant and inflates any finance total by the registrant count (a "fan-out"). To combine registrant counts with finance figures, first aggregate participants in a subquery, then join the one-row-per-race result to finance. Canonical pattern for "cost/income per registrant" or any per-race finance-vs-participation question:
     SELECT f.race_name,
            p.registrants,
            f."Total expense",
-           ROUND((f."Total expense" / p.registrants)::numeric, 2) AS expense_per_registrant
+           ROUND((f."Total expense" / NULLIF(p.registrants, 0))::numeric, 2) AS expense_per_registrant
     FROM finance f
-    JOIN (SELECT race_name, COUNT(*) AS registrants FROM participants GROUP BY race_name) p
+    JOIN (VALUES ('race_2024', 1162), ('race_2025', 1165), ('race_2026', 1100)) AS p(race_name, registrants)
       ON p.race_name = f.race_name
     ORDER BY f.race_name;
    The finance columns are already per-race totals — select them directly (f."Total expense"), never wrap them in SUM/AVG across the join.
+25b. DIVIDING A FINANCE AMOUNT BY A REGISTRANT COUNT — "per registrant", "per person", "average revenue per registrant", "cost per head", break-even, or any similar figure. The registrant count MUST come from the "Registrant basis" section near the end of this prompt, inlined as a literal (as in the VALUES list above). Do NOT use `SELECT COUNT(*) FROM participants`. A finance row describes a whole season, so dividing it by a live headcount for a race still taking sign-ups roughly doubles every per-registrant figure and halves break-even. This applies to EVERY per-registrant figure, not just break-even. Use COUNT(*) freely for questions purely about registrant numbers, demographics or timing — the restriction applies only when a finance amount is the numerator.
 27. CROSS-YEAR questions that combine figures from TWO DIFFERENT years (e.g. "what would we need this year to match last year's revenue", "how does this year's revenue per registrant compare to last year's total", any projection/break-even/target framed as "the same as last year"): NEVER express this as a join on race_name with a different year filter on each side. `JOIN ... ON p.race_name = f.race_name` where p is filtered to 'race_2024' and f to 'race_2025' matches ZERO rows and returns an empty result. The two years are different rows, so they can never be equal-joined.
    Instead compute each year's figure as its own INDEPENDENT scalar subquery and select them side by side in a single row, deriving the answer arithmetically. Canonical pattern for "how many registrants do we need this year to match last year's revenue":
     SELECT
       (SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2024') AS "Last year revenue",
-      (SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025') AS "This year revenue so far",
-      (SELECT COUNT(*) FROM participants WHERE race_name = 'race_2025') AS "Registrants so far",
+      (SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025') AS "This year revenue",
+      1165 AS "Registrants",   -- from the Registrant basis section, not COUNT(*)
       ROUND(((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025')
-             / NULLIF((SELECT COUNT(*) FROM participants WHERE race_name = 'race_2025'), 0))::numeric, 2)
+             / NULLIF(1165, 0))::numeric, 2)
         AS "Revenue per registrant",
       CEIL((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2024')
            / NULLIF((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025')
-                    / NULLIF((SELECT COUNT(*) FROM participants WHERE race_name = 'race_2025'), 0), 0))
+                    / NULLIF(1165, 0), 0))
         AS "Registrants needed to match last year";
    Always guard every divisor with NULLIF(..., 0) so the query cannot fail on a divide-by-zero. Give each derived column a clear quoted alias. This one-row shape is correct here — do NOT add a race_name column, because the row spans two years rather than describing one.
 28. BREAK-EVEN questions ("how many registrants do we need to break even", "break-even point", "how many to cover our costs"). Break-even is FIXED cost divided by the CONTRIBUTION MARGIN per registrant. It is never total expense divided by expense-per-registrant — that is circular and just returns the registrant count. The margin must come from INCOME, not cost.
    The finance table stores only raw line items; the fixed/variable totals are sums of those columns:
      Total Fixed expense    = "BTB (Cost / Consulting)" + "BTB (Rentals)" + "EMS" + "Timing services" + "Portable" + "Facebook/Signs" + "RRCA (insurance)" + "Other" + "Photography"
      Total Variable expense = "Shirts" + "Medals" + "Bandana" + "EMEDIA (Bibs)"
-     Race income (excl. sponsorship) = "Total income" - "Sponsorship"
-     contribution margin per registrant = (("Total income" - "Sponsorship") - Total Variable expense) / registrants
+     Registration income = "Race income" (this column is registration money only — do NOT build it as "Total income" - "Sponsorship", which leaves donations in, and no registrant paid those)
+     contribution margin per registrant = ("Race income" - Total Variable expense) / registrants
      break-even registrants = CEIL(Total Fixed expense / contribution margin per registrant)
+   The "registrants" divisor comes from the "Registrant basis" section near the end of this prompt, inlined as a plain number (e.g. `/ 1100`, or a VALUES list for several years). Never derive it with COUNT(*), and never constrain a counted value to it in a JOIN or WHERE — `ON p.registrants = 1100` compares 1100 to the live count, matches nothing, and returns an empty result.
+   The divisor is NOT COUNT(*) whenever a year is still taking sign-ups. A finance row covers the whole season, so dividing it by a partial headcount inflates the margin and roughly halves break-even. Use the number given for that year in "Registrant basis for per-registrant finance figures" (near the end of this prompt) as a literal instead of counting rows. For a year whose registration has closed, that basis IS the final headcount, so either works.
    Variable cost is NOT missing from this formula — it is subtracted inside the margin, so the break-even count does cover total (fixed + variable) cost at that volume. Label the fixed term "Fixed costs to cover" and the margin "Margin per registrant (after variable costs)" so the result does not read as though variable cost were ignored.
    Report BOTH break-even variants, because they answer different questions and differ a lot:
      - "Break-even registrants (sponsorship excluded)" = CEIL(Total Fixed expense / margin) — the conservative figure, treating sponsorship and donations as though they may not arrive. This is the Finance Tool's headline number.
@@ -221,25 +245,27 @@ FINANCE TABLE — read this before joining it:
            ROUND(((f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                    + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other"
                    + f."Photography"))::numeric, 2) AS "Fixed costs to cover",
-           ROUND(((((f."Total income" - f."Sponsorship")
+           ROUND(((f."Race income"
                     - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
-                   / NULLIF(p.registrants, 0)))::numeric, 2) AS "Margin per registrant (after variable costs)",
+                   / NULLIF(p.registrants, 0))::numeric, 2) AS "Margin per registrant (after variable costs)",
            CEIL((f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                  + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other" + f."Photography")
-                / NULLIF((((f."Total income" - f."Sponsorship")
+                / NULLIF(((f."Race income"
                            - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
                           / NULLIF(p.registrants, 0)), 0)) AS "Break-even registrants (sponsorship excluded)",
            CEIL(GREATEST(f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                  + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other" + f."Photography"
                  - f."Sponsorship" - f."Donations", 0)
-                / NULLIF((((f."Total income" - f."Sponsorship")
+                / NULLIF(((f."Race income"
                            - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
                           / NULLIF(p.registrants, 0)), 0)) AS "Break-even registrants (sponsorship included)"
     FROM finance f
-    JOIN (SELECT race_name, COUNT(*) AS registrants FROM participants GROUP BY race_name) p
+    JOIN (VALUES ('race_2024', 1162), ('race_2025', 1165)) AS p(race_name, registrants)
       ON p.race_name = f.race_name
     WHERE f.race_name IN ('race_2024', 'race_2025')
     ORDER BY f.race_name;
+   Note the VALUES list: the registrant basis is supplied as literals taken from the "Registrant basis" section, NOT computed with COUNT(*) over participants. Build that list from the years the question asks about.
+   When any year in the answer has registration still open, say so alongside the result — the figure rests on a projected field and on budget estimates, not on actuals.
 
 RESPONSE FORMAT:
 Return ONLY the SQL query. No explanation, no markdown, no code fences. Just the raw SQL.
@@ -249,7 +275,14 @@ DATABASE SCHEMA:
 """
 
 
-def generate_sql(question: str, api_key: str, model: str = "gpt-4o-mini", provider: str = "openai") -> str:
+def generate_sql(
+    question: str,
+    api_key: str,
+    model: str = "gpt-4o-mini",
+    provider: str = "openai",
+    prior_sql: str | None = None,
+    prior_error: str | None = None,
+) -> str:
     """
     Uses an LLM to translate a natural language question into a SQL query.
 
@@ -270,13 +303,30 @@ def generate_sql(question: str, api_key: str, model: str = "gpt-4o-mini", provid
     else:
         client = OpenAI(api_key=api_key)
 
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT.format(schema=schema)},
+        {"role": "user", "content": question},
+    ]
+    # Repair pass: hand back the query Postgres rejected along with its error so
+    # the model can fix it. Type-cast mistakes in particular are stated plainly
+    # by the error and are usually one edit away from correct.
+    if prior_sql and prior_error:
+        messages += [
+            {"role": "assistant", "content": prior_sql},
+            {
+                "role": "user",
+                "content": (
+                    f"That query failed with:\n{prior_error}\n\n"
+                    "Fix it and return only the corrected SQL. Keep the same "
+                    "columns, aliases and result shape."
+                ),
+            },
+        ]
+
     response = client.chat.completions.create(
         model=model,
         temperature=0,  # Deterministic — we want consistent SQL, not creative writing
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT.format(schema=schema)},
-            {"role": "user", "content": question}
-        ],
+        messages=messages,
         max_tokens=1000,
     )
 
@@ -454,13 +504,29 @@ def ask(question: str, api_key: str, model: str = "gpt-4o-mini", provider: str =
     try:
         df = execute_query(exec_sql)
     except Exception as e:
-        return {
-            "question": question,
-            "sql": sql,
-            "data": None,
-            "error": f"Query execution failed: {str(e)}",
-            "chart_hint": None,
-        }
+        # One repair attempt: Postgres errors (missing casts above all) name the
+        # problem precisely enough that the model can usually fix its own query.
+        try:
+            sql = generate_sql(
+                question, api_key, model, provider,
+                prior_sql=sql, prior_error=str(e),
+            )
+            is_valid, error_msg = validate_sql(sql)
+            if not is_valid:
+                raise ValueError(f"repaired query rejected (safety check): {error_msg}")
+            needs_norm = any(col in sql.lower() for col in NORMALIZERS.keys())
+            exec_sql, original_limit = (
+                _strip_limit(sql) if needs_norm else (sql, None)
+            )
+            df = execute_query(exec_sql)
+        except Exception:
+            return {
+                "question": question,
+                "sql": sql,
+                "data": None,
+                "error": f"Query execution failed: {str(e)}",
+                "chart_hint": None,
+            }
 
     df = normalize_result(df)
     if original_limit is not None:

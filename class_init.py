@@ -256,19 +256,35 @@ FINANCE_CATEGORIES = (
     FINANCE_INCOME_COLS + FINANCE_FIXED_COLS + FINANCE_VARIABLE_COLS + FINANCE_TOTAL_COLS
 )
 
+# Not a line item: the field size the rest of the row was budgeted against.
+# Every per-registrant figure divides this row by a headcount, and the only
+# headcount that makes the division honest is the one the budget assumed --
+# a $37,858 income line written for 1,100 racers describes 1,100 racers, no
+# matter how many have signed up so far. Kept out of FINANCE_CATEGORIES so the
+# uploader's line-item groups and seed_finance's completeness check are
+# unaffected.
+FINANCE_PLANNING_COLS = ["Assumed registrants"]
+
+FINANCE_PERSISTED_COLS = FINANCE_CATEGORIES + FINANCE_PLANNING_COLS
+
 
 def ensure_finance_table():
     """Create the finance table (one row per race, one column per line item) if
     it does not already exist."""
     # Category names come from the trusted FINANCE_CATEGORIES constant, so it is
     # safe to interpolate them as quoted column identifiers.
-    col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in FINANCE_CATEGORIES)
+    col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in FINANCE_PERSISTED_COLS)
     conn = connect_db()
     try:
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS finance ("
             f"race_name TEXT PRIMARY KEY, {col_defs})"
         ))
+        # Additive migration for tables created before a column existed.
+        for c in FINANCE_PERSISTED_COLS:
+            conn.execute(text(
+                f'ALTER TABLE finance ADD COLUMN IF NOT EXISTS "{c}" DOUBLE PRECISION'
+            ))
         conn.commit()
     finally:
         conn.close()
@@ -294,12 +310,129 @@ def load_all_finance() -> dict:
     return data
 
 
+def get_registrant_basis() -> dict:
+    """Return, per race, the registrant count that per-registrant finance
+    figures should be divided by.
+
+    A finance row describes a whole season: the income it records is what the
+    full field is expected to bring in, and the shirt/medal/bib totals are a
+    full field's order. The participants table, by contrast, is a live count.
+    While registration is still open those two describe different groups of
+    people, so dividing the finance row by COUNT(*) inflates both income and
+    variable cost per registrant -- which in turn halves break-even, the one
+    direction it is dangerous to be wrong in.
+
+    For a closed year the basis is simply the final headcount. For a year whose
+    registration is still open, the basis is "Assumed registrants" -- the field
+    size the budget itself was built against -- because that is the group the
+    rest of the row describes. When no assumption has been recorded, the final
+    field is projected instead from the pace of the most recent closed year:
+    what fraction of its field had signed up with the same number of days left,
+    applied to the count so far.
+
+    Each entry holds:
+      actual     -- registrations recorded so far
+      basis      -- count to divide whole-season finance figures by
+      projected  -- True when `basis` is an estimate rather than a final count
+      note       -- short human-readable explanation of how `basis` was derived
+    """
+    ensure_finance_table()
+    conn = connect_db()
+    try:
+        info = pd.read_sql("SELECT * FROM info", conn)
+        parts = pd.read_sql(
+            f'SELECT race_name, "Date" FROM "{PARTICIPANT_TABLE}"', conn
+        )
+        assumed_df = pd.read_sql(
+            'SELECT race_name, "Assumed registrants" FROM finance', conn
+        )
+    finally:
+        conn.close()
+
+    assumed = {
+        r.race_name: int(r[1])
+        for r in assumed_df.itertuples(index=False)
+        if pd.notna(r[1]) and r[1] > 0
+    }
+
+    parts["Date"] = pd.to_datetime(parts["Date"]).dt.date
+    counts = parts.groupby("race_name").size().to_dict()
+    ends = {
+        r["Name"]: datetime.strptime(r["Registration end date"], "%Y-%m-%d").date()
+        for _, r in info.iterrows()
+    }
+
+    today = date.today()
+    closed = sorted([n for n, e in ends.items() if today > e], key=lambda n: ends[n])
+
+    basis = {}
+    for name, end in ends.items():
+        actual = counts.get(name, 0)
+        if today > end:
+            basis[name] = {
+                "actual": actual,
+                "basis": actual,
+                "projected": False,
+                "note": "registration closed; final headcount",
+            }
+            continue
+
+        days_left = (end - today).days
+
+        # Registration still open. Prefer the field size the budget was built
+        # against, so numerator and denominator describe the same group.
+        if name in assumed:
+            basis[name] = {
+                "actual": actual,
+                "basis": assumed[name],
+                "projected": True,
+                "note": (
+                    f"registration open ({days_left} days left); using the "
+                    f"{assumed[name]:,} registrants the budget was estimated from"
+                ),
+            }
+            continue
+
+        # No recorded assumption -- fall back to the most recent closed year's
+        # pace at the same number of days before close.
+        ref = closed[-1] if closed else None
+        frac = None
+        if ref:
+            ref_total = counts.get(ref, 0)
+            if ref_total:
+                cutoff = ends[ref] - timedelta(days=days_left)
+                ref_so_far = len(
+                    parts[(parts.race_name == ref) & (parts.Date <= cutoff)]
+                )
+                if ref_so_far:
+                    frac = ref_so_far / ref_total
+
+        if frac:
+            basis[name] = {
+                "actual": actual,
+                "basis": int(round(actual / frac)),
+                "projected": True,
+                "note": (
+                    f"registration open ({days_left} days left); projected from "
+                    f"{ref}, which had {frac:.0%} of its field at this point"
+                ),
+            }
+        else:
+            basis[name] = {
+                "actual": actual,
+                "basis": actual,
+                "projected": False,
+                "note": "registration open; no closed year to project from",
+            }
+    return basis
+
+
 def save_finance(race_name: str, values: dict) -> None:
     """Upsert one race's finance row. `values` maps category -> amount."""
     safe_name = _validate_table_name(race_name)
     # Only persist known categories; this also keeps the interpolated column
     # identifiers below restricted to a trusted allowlist.
-    cols = [c for c in values if c in FINANCE_CATEGORIES]
+    cols = [c for c in values if c in FINANCE_PERSISTED_COLS]
     if not cols:
         return
 

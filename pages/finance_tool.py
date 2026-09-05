@@ -1,3 +1,5 @@
+import math
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -59,8 +61,38 @@ except Exception as e:
     st.stop()
 
 actual_registrants       = len(df)
-race_income_per_reg      = fin["Total income less sponsorship"] / actual_registrants
-var_per_reg              = fin["Total Variable expense"] / actual_registrants
+
+# ── registrant basis for per-registrant figures ───────────────────────────────
+# The finance row describes a whole season, so it must be divided by a whole
+# season's field. For a year that is still taking sign-ups the participants
+# table holds only a partial count; dividing by it would inflate income and
+# variable cost per registrant and halve break-even. get_registrant_basis()
+# projects the final field in that case, and the number stays editable here.
+basis_info   = get_registrant_basis().get(
+    race_selector, {"basis": actual_registrants, "projected": False, "note": ""}
+)
+basis_regs   = basis_info["basis"]
+
+if basis_info["projected"]:
+    st.info(
+        f"Registration for **{race_selector}** is still open — "
+        f"{actual_registrants:,} sign-ups so far. Finance figures cover the whole "
+        f"season, so per-registrant numbers below divide by a full field rather "
+        f"than the count to date: {basis_info['note']}."
+    )
+    basis_regs = st.number_input(
+        "Expected final field size (used for all per-registrant figures)",
+        min_value=1,
+        max_value=10_000,
+        value=int(basis_regs),
+        step=10,
+    )
+
+# Race income is registration money only. "Total income less sponsorship" still
+# carries donations, which no registrant paid, so it is not the right numerator
+# for a per-registrant figure.
+race_income_per_reg      = fin["Race income"] / basis_regs
+var_per_reg              = fin["Total Variable expense"] / basis_regs
 contribution_margin      = race_income_per_reg - var_per_reg
 breakeven_sp           = ((fin["Total Fixed expense"]-fin["Sponsorship"]-fin["Donations"]) / contribution_margin
                             if contribution_margin > 0 else float("inf"))
@@ -77,11 +109,19 @@ col2.metric("Total Income",               f"${fin['Total income']:,.0f}")
 col3.metric("Total Expenses",             f"${fin['Total expense']:,.2f}")
 col4.metric("Net (all in)",               f"${fin['Net (all in)']:,.0f}")
 
+if basis_info["projected"]:
+    st.caption(
+        f"Per-registrant figures below divide the season's finance row by "
+        f"{basis_regs:,} expected registrants (not the {actual_registrants:,} "
+        f"recorded so far)."
+    )
+
 col5, col6, col7, col8 = st.columns(4)
 col5.metric("Race Income / Registrant",   f"${race_income_per_reg:,.2f}")
 col6.metric("Variable Cost / Reg",        f"${var_per_reg:,.2f}")
 col7.metric("Contribution Margin / Reg",  f"${contribution_margin:,.2f}")
-col8.metric("Breakeven Registrants",      f"{breakeven_nosp:,.0f}")
+# ceil, not round, so this agrees with the CEIL(...) the NL engine generates
+col8.metric("Breakeven Registrants",      f"{math.ceil(breakeven_nosp):,}")
 
 # ── full breakdown ────────────────────────────────────────────────────────────
 with st.expander("View Full Financial Breakdown"):
@@ -120,6 +160,7 @@ if len(available) > 1:
 
     # build one row per year with exact column spec
     yoy_rows = []
+    all_basis = get_registrant_basis()
     for yr in sorted(available):
         f = FINANCE_DATA[yr]
         try:
@@ -127,7 +168,10 @@ if len(available) > 1:
         except Exception:
             yr_regs = None
 
-        rpr = (f["Race income"] / yr_regs) if yr_regs else None
+        # Divide by the projected field for an in-progress year, so the
+        # per-registrant column stays comparable across rows.
+        yr_basis = all_basis.get(yr, {}).get("basis") or yr_regs
+        rpr = (f["Race income"] / yr_basis) if yr_basis else None
 
         row = {"Year": yr}
         row["Race income"]                    = f"${f['Race income']:,.0f}"
@@ -136,6 +180,8 @@ if len(available) > 1:
         row["Total income"]                   = f"${f['Total income']:,.0f}"
         row["Total income less sponsorship"]  = f"${f['Total income less sponsorship']:,.0f}"
         row["Registrants"]                    = f"{yr_regs:,}" if yr_regs else "N/A"
+        if all_basis.get(yr, {}).get("projected"):
+            row["Registrants"] += f" (so far; {yr_basis:,} projected)"
         row["Race income per registrant"]     = f"${rpr:,.2f}" if rpr else "N/A"
         for c in FIXED_COLS:
             row[c] = f"${f[c]:,.2f}"
@@ -181,7 +227,7 @@ projected_regs = st.number_input(
     "Projected number of registrants",
     min_value=1,
     max_value=10_000,
-    value=actual_registrants,
+    value=int(basis_regs),
     step=10,
 )
 

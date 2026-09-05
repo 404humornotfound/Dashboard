@@ -267,6 +267,25 @@ else:
                     key=f"finance_input_{fin_race}_{cat}",
                 )
 
+        # Not a line item: the field size the figures above were budgeted
+        # against. Every per-registrant figure divides this row by a headcount,
+        # and while registration is open the recorded sign-ups are only a
+        # partial count -- so break-even uses this number instead.
+        st.markdown("**Planning assumption**")
+        finance_inputs["Assumed registrants"] = st.number_input(
+            "Assumed registrants (field size these figures were estimated from)",
+            min_value=0,
+            max_value=10_000,
+            value=int(existing_fin.get("Assumed registrants", 0) or 0),
+            step=10,
+            help=(
+                "Leave at 0 for a finished race, where the actual headcount is "
+                "used. For a race still taking sign-ups, set this to the field "
+                "size the income and shirt/medal figures assume."
+            ),
+            key=f"finance_input_{fin_race}_assumed_regs",
+        )
+
     if save_finance_clicked:
         try:
             save_finance(fin_race, finance_inputs)
