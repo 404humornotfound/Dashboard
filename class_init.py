@@ -322,13 +322,18 @@ def get_registrant_basis() -> dict:
     variable cost per registrant -- which in turn halves break-even, the one
     direction it is dangerous to be wrong in.
 
-    For a closed year the basis is simply the final headcount. For a year whose
-    registration is still open, the basis is "Assumed registrants" -- the field
-    size the budget itself was built against -- because that is the group the
-    rest of the row describes. When no assumption has been recorded, the final
-    field is projected instead from the pace of the most recent closed year:
-    what fraction of its field had signed up with the same number of days left,
-    applied to the count so far.
+    For a closed year the basis is simply the real final headcount. For a year
+    whose registration is still open, it is "Assumed registrants" -- the field
+    size the estimates themselves were built against -- because that is the
+    group the rest of the row describes. When no assumption has been recorded,
+    the final field is projected instead from the pace of the most recent closed
+    year: what fraction of its field had signed up with the same number of days
+    left, applied to the count so far.
+
+    This is narrowly scoped on purpose. It belongs only to arithmetic that
+    divides a finance amount by a headcount. Registrant counts, demographics,
+    city and age breakdowns and sign-up trends must always use the real rows in
+    the participants table -- never this number.
 
     Each entry holds:
       actual     -- registrations recorded so far

@@ -267,21 +267,27 @@ else:
                     key=f"finance_input_{fin_race}_{cat}",
                 )
 
-        # Not a line item: the field size the figures above were budgeted
-        # against. Every per-registrant figure divides this row by a headcount,
-        # and while registration is open the recorded sign-ups are only a
-        # partial count -- so break-even uses this number instead.
-        st.markdown("**Planning assumption**")
+        # Not a line item, and deliberately narrow in scope: this is the field
+        # size the ESTIMATES above were written against. It exists only so that
+        # an estimated finance figure and the headcount it is divided by
+        # describe the same group of people. It must never stand in for the
+        # real registrant count anywhere else in the dashboard.
+        st.markdown("**Estimate basis**")
         finance_inputs["Assumed registrants"] = st.number_input(
-            "Assumed registrants (field size these figures were estimated from)",
+            "Registrants these estimates assume",
             min_value=0,
             max_value=10_000,
             value=int(existing_fin.get("Assumed registrants", 0) or 0),
             step=10,
             help=(
-                "Leave at 0 for a finished race, where the actual headcount is "
-                "used. For a race still taking sign-ups, set this to the field "
-                "size the income and shirt/medal figures assume."
+                "Only for a race whose figures above are estimates rather than "
+                "final numbers. Set it to the field size those estimates were "
+                "built from, and it will be used solely to turn them into "
+                "per-registrant amounts (income per registrant, break-even). "
+                "Leave at 0 for a finished race, or whenever the figures are "
+                "actuals — the real headcount is used then. Registrant counts, "
+                "demographics and sign-up trends always use real registrations, "
+                "never this number."
             ),
             key=f"finance_input_{fin_race}_assumed_regs",
         )
