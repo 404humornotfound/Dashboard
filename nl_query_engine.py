@@ -229,6 +229,7 @@ FINANCE TABLE — read this before joining it:
    Never emit that placeholder literally — substitute the actual rows given in that section.
    The finance columns are already per-race totals — select them directly (f."Total expense"), never wrap them in SUM/AVG across the join.
 25b. DIVIDING A FINANCE AMOUNT BY A REGISTRANT COUNT — "per registrant", "per person", "average revenue per registrant", "cost per head", break-even, or any similar figure. The registrant count MUST come from the "Registrant basis" section near the end of this prompt, inlined as a literal. Do NOT use `SELECT COUNT(*) FROM participants`, and do NOT reuse any registrant number written in the examples in this prompt — those are placeholders, and the real values are listed in that section. A finance row describes a whole season, so dividing it by a live headcount for a race still taking sign-ups roughly doubles every per-registrant figure and halves break-even. This applies to EVERY per-registrant figure, not just break-even. Use COUNT(*) freely for questions purely about registrant numbers, demographics or timing — the restriction applies only when a finance amount is the numerator.
+   ALWAYS show the working. Alongside any per-registrant figure, select the amount you divided and the registrant count you divided by, each with a clear alias, so the row explains itself. A lone derived number cannot be checked or interpreted by the reader. For "average revenue per registrant in 2026", return three columns — the total income, the registrant count used, and the result — not just the result.
 27. CROSS-YEAR questions that combine figures from TWO DIFFERENT years (e.g. "what would we need this year to match last year's revenue", "how does this year's revenue per registrant compare to last year's total", any projection/break-even/target framed as "the same as last year"): NEVER express this as a join on race_name with a different year filter on each side. `JOIN ... ON p.race_name = f.race_name` where p is filtered to 'race_2024' and f to 'race_2025' matches ZERO rows and returns an empty result. The two years are different rows, so they can never be equal-joined.
    Instead compute each year's figure as its own INDEPENDENT scalar subquery and select them side by side in a single row, deriving the answer arithmetically. Canonical pattern for "how many registrants do we need this year to match last year's revenue":
     SELECT
@@ -560,7 +561,40 @@ def ask(question: str, api_key: str, model: str = "gpt-4o-mini", provider: str =
         "error": None,
         "chart_hint": chart_hint,
         "empty_reason": diagnose_empty(sql) if df.empty else None,
+        "basis_caveat": basis_caveat(sql),
     }
+
+
+def basis_caveat(sql: str) -> str | None:
+    """Warn when a result rests on an assumed field size rather than real sign-ups.
+
+    A per-registrant finance figure for an unfinished race divides budget
+    estimates by the field size those estimates assume. That number is not a
+    sign-up count, and printing it in a column called "registrants" next to a
+    page that reports the real total invites exactly the wrong reading. Detected
+    here rather than asked of the model, so the warning cannot be forgotten.
+    """
+    if "finance" not in sql.lower():
+        return None
+    try:
+        basis = get_registrant_basis()
+    except Exception:
+        return None
+
+    notes = [
+        (
+            f"{name.replace('race_', '')}: figures are estimates built for a field of "
+            f"{b['basis']:,}; {b['actual']:,} have actually registered so far"
+        )
+        for name, b in sorted(basis.items())
+        if b["projected"] and b["basis"] != b["actual"] and name in sql
+    ]
+    if not notes:
+        return None
+    return (
+        "Any per-registrant figure here divides estimated finance data by an "
+        "assumed field size, not by real sign-ups — " + "; ".join(notes) + "."
+    )
 
 
 def diagnose_empty(sql: str) -> str | None:

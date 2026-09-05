@@ -198,12 +198,18 @@ def render_response(result, turn_id, question=""):
     for caveat in evidence.caveats:
         st.warning(caveat)
 
+    # Flagged whenever a per-registrant figure rests on an assumed field size,
+    # so a count like 1,100 is never mistaken for real sign-ups.
+    basis_note = result.get("basis_caveat")
+    if basis_note:
+        st.warning(basis_note)
+
     if narrative:
         st.info(narrative["text"])
         if narrative["guard_status"] == "fallback":
             st.caption(
-                "The written summary was rejected for citing a number not in the data, "
-                "so this is the raw statistical finding instead."
+                "Showing the direct finding rather than a written interpretation — "
+                "every figure here comes straight from the query result."
             )
 
     chart_hint = result["chart_hint"]
