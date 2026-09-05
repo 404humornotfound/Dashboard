@@ -26,7 +26,7 @@ import pandas as pd
 from datetime import datetime
 from openai import OpenAI
 from sqlalchemy import text
-from class_init import connect_db, _validate_table_name
+from class_init import connect_db, _validate_table_name, get_registrant_basis
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,21 @@ def get_db_schema() -> str:
     finally:
         conn.close()
 
-    return "\n\n".join(schema_parts) + info_context
+    # Per-registrant figures must divide a whole-season finance row by a whole
+    # season's field, so a year still taking sign-ups needs a projected count
+    # rather than COUNT(*). Injecting the basis as a fact lets the generated SQL
+    # use a literal, since the projection itself is not expressible in SQL.
+    basis_context = "\n\nRegistrant basis for per-registrant finance figures:\n"
+    try:
+        for name, b in sorted(get_registrant_basis().items()):
+            basis_context += (
+                f"  {name}: registrations so far {b['actual']}, "
+                f"USE {b['basis']} as the registrant count — {b['note']}\n"
+            )
+    except Exception:
+        basis_context = ""
+
+    return "\n\n".join(schema_parts) + info_context + basis_context
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +222,10 @@ FINANCE TABLE — read this before joining it:
    The finance table stores only raw line items; the fixed/variable totals are sums of those columns:
      Total Fixed expense    = "BTB (Cost / Consulting)" + "BTB (Rentals)" + "EMS" + "Timing services" + "Portable" + "Facebook/Signs" + "RRCA (insurance)" + "Other" + "Photography"
      Total Variable expense = "Shirts" + "Medals" + "Bandana" + "EMEDIA (Bibs)"
-     Race income (excl. sponsorship) = "Total income" - "Sponsorship"
-     contribution margin per registrant = (("Total income" - "Sponsorship") - Total Variable expense) / registrants
+     Registration income = "Race income" (this column is registration money only — do NOT build it as "Total income" - "Sponsorship", which leaves donations in, and no registrant paid those)
+     contribution margin per registrant = ("Race income" - Total Variable expense) / registrants
      break-even registrants = CEIL(Total Fixed expense / contribution margin per registrant)
+   The "registrants" divisor is NOT COUNT(*) whenever a year is still taking sign-ups. A finance row covers the whole season, so dividing it by a partial headcount inflates the margin and roughly halves break-even. Use the number given for that year in "Registrant basis for per-registrant finance figures" (near the end of this prompt) as a literal instead of counting rows. For a year whose registration has closed, that basis IS the final headcount, so either works.
    Variable cost is NOT missing from this formula — it is subtracted inside the margin, so the break-even count does cover total (fixed + variable) cost at that volume. Label the fixed term "Fixed costs to cover" and the margin "Margin per registrant (after variable costs)" so the result does not read as though variable cost were ignored.
    Report BOTH break-even variants, because they answer different questions and differ a lot:
      - "Break-even registrants (sponsorship excluded)" = CEIL(Total Fixed expense / margin) — the conservative figure, treating sponsorship and donations as though they may not arrive. This is the Finance Tool's headline number.
@@ -221,25 +236,27 @@ FINANCE TABLE — read this before joining it:
            ROUND(((f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                    + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other"
                    + f."Photography"))::numeric, 2) AS "Fixed costs to cover",
-           ROUND(((((f."Total income" - f."Sponsorship")
+           ROUND(((f."Race income"
                     - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
-                   / NULLIF(p.registrants, 0)))::numeric, 2) AS "Margin per registrant (after variable costs)",
+                   / NULLIF(p.registrants, 0))::numeric, 2) AS "Margin per registrant (after variable costs)",
            CEIL((f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                  + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other" + f."Photography")
-                / NULLIF((((f."Total income" - f."Sponsorship")
+                / NULLIF(((f."Race income"
                            - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
                           / NULLIF(p.registrants, 0)), 0)) AS "Break-even registrants (sponsorship excluded)",
            CEIL(GREATEST(f."BTB (Cost / Consulting)" + f."BTB (Rentals)" + f."EMS" + f."Timing services"
                  + f."Portable" + f."Facebook/Signs" + f."RRCA (insurance)" + f."Other" + f."Photography"
                  - f."Sponsorship" - f."Donations", 0)
-                / NULLIF((((f."Total income" - f."Sponsorship")
+                / NULLIF(((f."Race income"
                            - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
                           / NULLIF(p.registrants, 0)), 0)) AS "Break-even registrants (sponsorship included)"
     FROM finance f
-    JOIN (SELECT race_name, COUNT(*) AS registrants FROM participants GROUP BY race_name) p
+    JOIN (VALUES ('race_2024', 1162), ('race_2025', 1165)) AS p(race_name, registrants)
       ON p.race_name = f.race_name
     WHERE f.race_name IN ('race_2024', 'race_2025')
     ORDER BY f.race_name;
+   Note the VALUES list: the registrant basis is supplied as literals taken from the "Registrant basis" section, NOT computed with COUNT(*) over participants. Build that list from the years the question asks about.
+   When any year in the answer has registration still open, say so alongside the result — the figure rests on a projected field and on budget estimates, not on actuals.
 
 RESPONSE FORMAT:
 Return ONLY the SQL query. No explanation, no markdown, no code fences. Just the raw SQL.

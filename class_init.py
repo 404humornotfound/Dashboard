@@ -294,6 +294,95 @@ def load_all_finance() -> dict:
     return data
 
 
+def get_registrant_basis() -> dict:
+    """Return, per race, the registrant count that per-registrant finance
+    figures should be divided by.
+
+    A finance row describes a whole season: the income it records is what the
+    full field is expected to bring in, and the shirt/medal/bib totals are a
+    full field's order. The participants table, by contrast, is a live count.
+    While registration is still open those two describe different groups of
+    people, so dividing the finance row by COUNT(*) inflates both income and
+    variable cost per registrant -- which in turn halves break-even, the one
+    direction it is dangerous to be wrong in.
+
+    For a closed year the basis is simply the final headcount. For a year whose
+    registration is still open, the final field is projected from the pace of
+    the most recent closed year: what fraction of its field had signed up with
+    the same number of days left, applied to the count so far.
+
+    Each entry holds:
+      actual     -- registrations recorded so far
+      basis      -- count to divide whole-season finance figures by
+      projected  -- True when `basis` is an estimate rather than a final count
+      note       -- short human-readable explanation of how `basis` was derived
+    """
+    conn = connect_db()
+    try:
+        info = pd.read_sql("SELECT * FROM info", conn)
+        parts = pd.read_sql(
+            f'SELECT race_name, "Date" FROM "{PARTICIPANT_TABLE}"', conn
+        )
+    finally:
+        conn.close()
+
+    parts["Date"] = pd.to_datetime(parts["Date"]).dt.date
+    counts = parts.groupby("race_name").size().to_dict()
+    ends = {
+        r["Name"]: datetime.strptime(r["Registration end date"], "%Y-%m-%d").date()
+        for _, r in info.iterrows()
+    }
+
+    today = date.today()
+    closed = sorted([n for n, e in ends.items() if today > e], key=lambda n: ends[n])
+
+    basis = {}
+    for name, end in ends.items():
+        actual = counts.get(name, 0)
+        if today > end:
+            basis[name] = {
+                "actual": actual,
+                "basis": actual,
+                "projected": False,
+                "note": "registration closed; final headcount",
+            }
+            continue
+
+        # Registration still open -- project the final field from the most
+        # recent closed year's pace at the same number of days before close.
+        days_left = (end - today).days
+        ref = closed[-1] if closed else None
+        frac = None
+        if ref:
+            ref_total = counts.get(ref, 0)
+            if ref_total:
+                cutoff = ends[ref] - timedelta(days=days_left)
+                ref_so_far = len(
+                    parts[(parts.race_name == ref) & (parts.Date <= cutoff)]
+                )
+                if ref_so_far:
+                    frac = ref_so_far / ref_total
+
+        if frac:
+            basis[name] = {
+                "actual": actual,
+                "basis": int(round(actual / frac)),
+                "projected": True,
+                "note": (
+                    f"registration open ({days_left} days left); projected from "
+                    f"{ref}, which had {frac:.0%} of its field at this point"
+                ),
+            }
+        else:
+            basis[name] = {
+                "actual": actual,
+                "basis": actual,
+                "projected": False,
+                "note": "registration open; no closed year to project from",
+            }
+    return basis
+
+
 def save_finance(race_name: str, values: dict) -> None:
     """Upsert one race's finance row. `values` maps category -> amount."""
     safe_name = _validate_table_name(race_name)
