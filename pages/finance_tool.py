@@ -1,3 +1,5 @@
+import math
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -75,9 +77,8 @@ if basis_info["projected"]:
     st.info(
         f"Registration for **{race_selector}** is still open — "
         f"{actual_registrants:,} sign-ups so far. Finance figures cover the whole "
-        f"season, so per-registrant numbers below are divided by a projected "
-        f"final field rather than the count to date "
-        f"({basis_info['note']})."
+        f"season, so per-registrant numbers below divide by a full field rather "
+        f"than the count to date: {basis_info['note']}."
     )
     basis_regs = st.number_input(
         "Expected final field size (used for all per-registrant figures)",
@@ -119,7 +120,8 @@ col5, col6, col7, col8 = st.columns(4)
 col5.metric("Race Income / Registrant",   f"${race_income_per_reg:,.2f}")
 col6.metric("Variable Cost / Reg",        f"${var_per_reg:,.2f}")
 col7.metric("Contribution Margin / Reg",  f"${contribution_margin:,.2f}")
-col8.metric("Breakeven Registrants",      f"{breakeven_nosp:,.0f}")
+# ceil, not round, so this agrees with the CEIL(...) the NL engine generates
+col8.metric("Breakeven Registrants",      f"{math.ceil(breakeven_nosp):,}")
 
 # ── full breakdown ────────────────────────────────────────────────────────────
 with st.expander("View Full Financial Breakdown"):

@@ -256,19 +256,35 @@ FINANCE_CATEGORIES = (
     FINANCE_INCOME_COLS + FINANCE_FIXED_COLS + FINANCE_VARIABLE_COLS + FINANCE_TOTAL_COLS
 )
 
+# Not a line item: the field size the rest of the row was budgeted against.
+# Every per-registrant figure divides this row by a headcount, and the only
+# headcount that makes the division honest is the one the budget assumed --
+# a $37,858 income line written for 1,100 racers describes 1,100 racers, no
+# matter how many have signed up so far. Kept out of FINANCE_CATEGORIES so the
+# uploader's line-item groups and seed_finance's completeness check are
+# unaffected.
+FINANCE_PLANNING_COLS = ["Assumed registrants"]
+
+FINANCE_PERSISTED_COLS = FINANCE_CATEGORIES + FINANCE_PLANNING_COLS
+
 
 def ensure_finance_table():
     """Create the finance table (one row per race, one column per line item) if
     it does not already exist."""
     # Category names come from the trusted FINANCE_CATEGORIES constant, so it is
     # safe to interpolate them as quoted column identifiers.
-    col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in FINANCE_CATEGORIES)
+    col_defs = ", ".join(f'"{c}" DOUBLE PRECISION' for c in FINANCE_PERSISTED_COLS)
     conn = connect_db()
     try:
         conn.execute(text(
             "CREATE TABLE IF NOT EXISTS finance ("
             f"race_name TEXT PRIMARY KEY, {col_defs})"
         ))
+        # Additive migration for tables created before a column existed.
+        for c in FINANCE_PERSISTED_COLS:
+            conn.execute(text(
+                f'ALTER TABLE finance ADD COLUMN IF NOT EXISTS "{c}" DOUBLE PRECISION'
+            ))
         conn.commit()
     finally:
         conn.close()
@@ -307,9 +323,12 @@ def get_registrant_basis() -> dict:
     direction it is dangerous to be wrong in.
 
     For a closed year the basis is simply the final headcount. For a year whose
-    registration is still open, the final field is projected from the pace of
-    the most recent closed year: what fraction of its field had signed up with
-    the same number of days left, applied to the count so far.
+    registration is still open, the basis is "Assumed registrants" -- the field
+    size the budget itself was built against -- because that is the group the
+    rest of the row describes. When no assumption has been recorded, the final
+    field is projected instead from the pace of the most recent closed year:
+    what fraction of its field had signed up with the same number of days left,
+    applied to the count so far.
 
     Each entry holds:
       actual     -- registrations recorded so far
@@ -317,14 +336,24 @@ def get_registrant_basis() -> dict:
       projected  -- True when `basis` is an estimate rather than a final count
       note       -- short human-readable explanation of how `basis` was derived
     """
+    ensure_finance_table()
     conn = connect_db()
     try:
         info = pd.read_sql("SELECT * FROM info", conn)
         parts = pd.read_sql(
             f'SELECT race_name, "Date" FROM "{PARTICIPANT_TABLE}"', conn
         )
+        assumed_df = pd.read_sql(
+            'SELECT race_name, "Assumed registrants" FROM finance', conn
+        )
     finally:
         conn.close()
+
+    assumed = {
+        r.race_name: int(r[1])
+        for r in assumed_df.itertuples(index=False)
+        if pd.notna(r[1]) and r[1] > 0
+    }
 
     parts["Date"] = pd.to_datetime(parts["Date"]).dt.date
     counts = parts.groupby("race_name").size().to_dict()
@@ -348,9 +377,24 @@ def get_registrant_basis() -> dict:
             }
             continue
 
-        # Registration still open -- project the final field from the most
-        # recent closed year's pace at the same number of days before close.
         days_left = (end - today).days
+
+        # Registration still open. Prefer the field size the budget was built
+        # against, so numerator and denominator describe the same group.
+        if name in assumed:
+            basis[name] = {
+                "actual": actual,
+                "basis": assumed[name],
+                "projected": True,
+                "note": (
+                    f"registration open ({days_left} days left); using the "
+                    f"{assumed[name]:,} registrants the budget was estimated from"
+                ),
+            }
+            continue
+
+        # No recorded assumption -- fall back to the most recent closed year's
+        # pace at the same number of days before close.
         ref = closed[-1] if closed else None
         frac = None
         if ref:
@@ -388,7 +432,7 @@ def save_finance(race_name: str, values: dict) -> None:
     safe_name = _validate_table_name(race_name)
     # Only persist known categories; this also keeps the interpolated column
     # identifiers below restricted to a trusted allowlist.
-    cols = [c for c in values if c in FINANCE_CATEGORIES]
+    cols = [c for c in values if c in FINANCE_PERSISTED_COLS]
     if not cols:
         return
 
