@@ -126,19 +126,35 @@ def get_db_schema() -> str:
     # season's field, so a year still taking sign-ups needs a projected count
     # rather than COUNT(*). Injecting the basis as a fact lets the generated SQL
     # use a literal, since the projection itself is not expressible in SQL.
-    basis_context = (
-        "\n\nRegistrant basis for per-registrant finance figures.\n"
-        "When dividing ANY finance-table amount by a registrant count, substitute\n"
-        "the plain number below as a literal. Do not COUNT(*) the participants\n"
-        "table for this, and never write a JOIN or WHERE that compares a count to\n"
-        "it — that matches no rows and returns an empty result.\n"
-    )
+    basis_context = ""
     try:
-        for name, b in sorted(get_registrant_basis().items()):
-            basis_context += (
-                f"  {name}: use {b['basis']} "
-                f"(registrations recorded so far: {b['actual']}; {b['note']})\n"
-            )
+        basis = get_registrant_basis()
+        rows = ", ".join(
+            f"('{name}', {b['basis']})" for name, b in sorted(basis.items())
+        )
+        lines = "".join(
+            f"  {name}: {b['basis']} "
+            f"(registrations actually recorded: {b['actual']}; {b['note']})\n"
+            for name, b in sorted(basis.items())
+        )
+        basis_context = (
+            "\n\nRegistrant basis — ONLY for dividing a finance-table amount by a "
+            "registrant count.\n"
+            "A finance row for an unfinished race holds budget estimates written "
+            "against an\n"
+            "assumed field size, so the estimate and the divisor must describe the "
+            "same group.\n"
+            "For a finished race this is simply the real final headcount.\n"
+            f"{lines}"
+            "Paste the rows you need from this VALUES clause rather than counting "
+            "participants:\n"
+            f"  (VALUES {rows}) AS p(race_name, registrants)\n"
+            "This applies ONLY when a finance amount is the numerator. Every other "
+            "question about\n"
+            "registrant numbers, demographics, cities, ages or timing must use the "
+            "real rows in the\n"
+            "participants table via COUNT(*) as normal.\n"
+        )
     except Exception:
         basis_context = ""
 
@@ -207,24 +223,26 @@ FINANCE TABLE — read this before joining it:
            f."Total expense",
            ROUND((f."Total expense" / NULLIF(p.registrants, 0))::numeric, 2) AS expense_per_registrant
     FROM finance f
-    JOIN (VALUES ('race_2024', 1162), ('race_2025', 1165), ('race_2026', 1100)) AS p(race_name, registrants)
+    JOIN (VALUES <the rows for the races you need, copied from the "Registrant basis" section at the end of this prompt>) AS p(race_name, registrants)
       ON p.race_name = f.race_name
     ORDER BY f.race_name;
+   Never emit that placeholder literally — substitute the actual rows given in that section.
    The finance columns are already per-race totals — select them directly (f."Total expense"), never wrap them in SUM/AVG across the join.
-25b. DIVIDING A FINANCE AMOUNT BY A REGISTRANT COUNT — "per registrant", "per person", "average revenue per registrant", "cost per head", break-even, or any similar figure. The registrant count MUST come from the "Registrant basis" section near the end of this prompt, inlined as a literal (as in the VALUES list above). Do NOT use `SELECT COUNT(*) FROM participants`. A finance row describes a whole season, so dividing it by a live headcount for a race still taking sign-ups roughly doubles every per-registrant figure and halves break-even. This applies to EVERY per-registrant figure, not just break-even. Use COUNT(*) freely for questions purely about registrant numbers, demographics or timing — the restriction applies only when a finance amount is the numerator.
+25b. DIVIDING A FINANCE AMOUNT BY A REGISTRANT COUNT — "per registrant", "per person", "average revenue per registrant", "cost per head", break-even, or any similar figure. The registrant count MUST come from the "Registrant basis" section near the end of this prompt, inlined as a literal. Do NOT use `SELECT COUNT(*) FROM participants`, and do NOT reuse any registrant number written in the examples in this prompt — those are placeholders, and the real values are listed in that section. A finance row describes a whole season, so dividing it by a live headcount for a race still taking sign-ups roughly doubles every per-registrant figure and halves break-even. This applies to EVERY per-registrant figure, not just break-even. Use COUNT(*) freely for questions purely about registrant numbers, demographics or timing — the restriction applies only when a finance amount is the numerator.
 27. CROSS-YEAR questions that combine figures from TWO DIFFERENT years (e.g. "what would we need this year to match last year's revenue", "how does this year's revenue per registrant compare to last year's total", any projection/break-even/target framed as "the same as last year"): NEVER express this as a join on race_name with a different year filter on each side. `JOIN ... ON p.race_name = f.race_name` where p is filtered to 'race_2024' and f to 'race_2025' matches ZERO rows and returns an empty result. The two years are different rows, so they can never be equal-joined.
    Instead compute each year's figure as its own INDEPENDENT scalar subquery and select them side by side in a single row, deriving the answer arithmetically. Canonical pattern for "how many registrants do we need this year to match last year's revenue":
     SELECT
       (SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2024') AS "Last year revenue",
       (SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025') AS "This year revenue",
-      1165 AS "Registrants",   -- from the Registrant basis section, not COUNT(*)
+      <basis for race_2025> AS "Registrants",   -- the number from the "Registrant basis" section, not COUNT(*)
       ROUND(((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025')
-             / NULLIF(1165, 0))::numeric, 2)
+             / NULLIF(<basis for race_2025>, 0))::numeric, 2)
         AS "Revenue per registrant",
       CEIL((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2024')
            / NULLIF((SELECT f."Total income" FROM finance f WHERE f.race_name = 'race_2025')
-                    / NULLIF(1165, 0), 0))
+                    / NULLIF(<basis for race_2025>, 0), 0))
         AS "Registrants needed to match last year";
+   Substitute the real number for every <basis for ...> placeholder — never emit one literally.
    Always guard every divisor with NULLIF(..., 0) so the query cannot fail on a divide-by-zero. Give each derived column a clear quoted alias. This one-row shape is correct here — do NOT add a race_name column, because the row spans two years rather than describing one.
 28. BREAK-EVEN questions ("how many registrants do we need to break even", "break-even point", "how many to cover our costs"). Break-even is FIXED cost divided by the CONTRIBUTION MARGIN per registrant. It is never total expense divided by expense-per-registrant — that is circular and just returns the registrant count. The margin must come from INCOME, not cost.
    The finance table stores only raw line items; the fixed/variable totals are sums of those columns:
@@ -233,7 +251,7 @@ FINANCE TABLE — read this before joining it:
      Registration income = "Race income" (this column is registration money only — do NOT build it as "Total income" - "Sponsorship", which leaves donations in, and no registrant paid those)
      contribution margin per registrant = ("Race income" - Total Variable expense) / registrants
      break-even registrants = CEIL(Total Fixed expense / contribution margin per registrant)
-   The "registrants" divisor comes from the "Registrant basis" section near the end of this prompt, inlined as a plain number (e.g. `/ 1100`, or a VALUES list for several years). Never derive it with COUNT(*), and never constrain a counted value to it in a JOIN or WHERE — `ON p.registrants = 1100` compares 1100 to the live count, matches nothing, and returns an empty result.
+   The "registrants" divisor comes from the "Registrant basis" section near the end of this prompt, inlined as a plain number (or a VALUES list for several years). Never derive it with COUNT(*), and never constrain a counted value to it in a JOIN or WHERE — a condition like `ON p.registrants = <basis>` compares the basis to the live count, matches nothing, and returns an empty result.
    The divisor is NOT COUNT(*) whenever a year is still taking sign-ups. A finance row covers the whole season, so dividing it by a partial headcount inflates the margin and roughly halves break-even. Use the number given for that year in "Registrant basis for per-registrant finance figures" (near the end of this prompt) as a literal instead of counting rows. For a year whose registration has closed, that basis IS the final headcount, so either works.
    Variable cost is NOT missing from this formula — it is subtracted inside the margin, so the break-even count does cover total (fixed + variable) cost at that volume. Label the fixed term "Fixed costs to cover" and the margin "Margin per registrant (after variable costs)" so the result does not read as though variable cost were ignored.
    Report BOTH break-even variants, because they answer different questions and differ a lot:
@@ -260,11 +278,11 @@ FINANCE TABLE — read this before joining it:
                            - (f."Shirts" + f."Medals" + f."Bandana" + f."EMEDIA (Bibs)"))
                           / NULLIF(p.registrants, 0)), 0)) AS "Break-even registrants (sponsorship included)"
     FROM finance f
-    JOIN (VALUES ('race_2024', 1162), ('race_2025', 1165)) AS p(race_name, registrants)
+    JOIN (VALUES <the rows for the years asked about, copied from the "Registrant basis" section>) AS p(race_name, registrants)
       ON p.race_name = f.race_name
-    WHERE f.race_name IN ('race_2024', 'race_2025')
+    WHERE f.race_name IN (<those same years>)
     ORDER BY f.race_name;
-   Note the VALUES list: the registrant basis is supplied as literals taken from the "Registrant basis" section, NOT computed with COUNT(*) over participants. Build that list from the years the question asks about.
+   The VALUES rows come from the "Registrant basis" section verbatim, NOT from COUNT(*) over participants, and NOT from any number written in these examples.
    When any year in the answer has registration still open, say so alongside the result — the figure rests on a projected field and on budget estimates, not on actuals.
 
 RESPONSE FORMAT:
