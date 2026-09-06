@@ -1,3 +1,5 @@
+import numbers
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -88,6 +90,21 @@ st.markdown("##### natural language query")
 
 if "chat" not in st.session_state:
     st.session_state["chat"] = []
+
+
+def _format_metric(value):
+    """Render one KPI value: thousands-separated, without trailing zeros.
+
+    Uses numbers.* rather than int/float because a value straight out of a
+    DataFrame is typically numpy-typed, and numpy integers are not Python ints
+    -- which left counts like 1100 unformatted while floats beside them were
+    grouped as 22,672.
+    """
+    if isinstance(value, numbers.Integral):
+        return f"{int(value):,}"
+    if isinstance(value, numbers.Real):
+        return f"{float(value):,.2f}".rstrip("0").rstrip(".")
+    return str(value)
 
 
 def _small_chart(fig, key):
@@ -217,7 +234,11 @@ def render_response(result, turn_id, question=""):
     if chart_hint == "metric":
         value = df.iloc[0, 0]
         col_name = df.columns[0]
-        st.metric(label=col_name, value=f"{value:,}" if isinstance(value, (int, float)) else str(value))
+        st.metric(
+            label=str(col_name),
+            value=_format_metric(value),
+            help=f"{col_name}: {_format_metric(value)}",
+        )
 
     elif chart_hint == "pivot_bar":
         st.dataframe(df, use_container_width=True)
@@ -244,18 +265,27 @@ def render_response(result, turn_id, question=""):
 
     elif chart_hint == "metrics":
         # One row, several figures: show them as KPI tiles rather than a
-        # single-point chart. Tiles wrap onto a second line past four columns.
+        # single-point chart. Streamlit ellipsizes a metric label or value that
+        # outruns its tile instead of wrapping it, so the tiles per row adapt to
+        # the longest entry -- break-even results carry labels as long as
+        # "Margin per registrant (after variable costs)", which is unreadable
+        # squeezed into a quarter of the width. The full text is also attached
+        # as a tooltip, so nothing is lost even if a tile still clips.
         row = df.iloc[0]
         cols = list(df.columns)
-        for start in range(0, len(cols), 4):
-            chunk = cols[start:start + 4]
+        values = {name: _format_metric(row[name]) for name in cols}
+        widest = max(
+            (max(len(str(name)), len(values[name])) for name in cols), default=0
+        )
+        per_row = 4 if widest <= 16 else 3 if widest <= 26 else 2
+
+        for start in range(0, len(cols), per_row):
+            chunk = cols[start:start + per_row]
             for slot, name in zip(st.columns(len(chunk)), chunk):
-                value = row[name]
                 slot.metric(
                     label=str(name),
-                    value=f"{value:,.2f}".rstrip("0").rstrip(".")
-                    if isinstance(value, float) else f"{value:,}"
-                    if isinstance(value, int) else str(value),
+                    value=values[name],
+                    help=f"{name}: {values[name]}",
                 )
         with st.expander("data", expanded=False):
             st.dataframe(df, use_container_width=True)
